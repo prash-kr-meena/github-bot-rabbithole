@@ -47,12 +47,14 @@ def check_environment():
 def check_files():
     """Check if all required files exist."""
     required_files = [
-        "app.py",
+        "issue_bot.py",
+        "pr_bot.py",
         ".env",
         "requirements.txt",
         "test_github_auth.py",
         "test_ngrok.py",
-        "test_bot.py"
+        "test_bot.py",
+        "test_pr_bot.py"
     ]
     
     missing_files = [f for f in required_files if not os.path.exists(f)]
@@ -79,8 +81,9 @@ def check_test_env_vars():
         print("Please set the following environment variables in your .env file:")
         print("  GITHUB_REPO=your-actual-username/your-actual-repo")
         print("  GITHUB_ISSUE_NUMBER=1  # Use an actual issue number in your repo")
+        print("  GITHUB_PR_NUMBER=1     # Use an actual PR number in your repo")
         print("  GITHUB_USERNAME=your-actual-username")
-        print("\nSee TESTING.md for more information on fixing this issue.")
+        print("\nSee TESTING.md and PR_TESTING.md for more information on fixing this issue.")
         
         proceed = input("Continue anyway? (y/n): ").strip().lower()
         if proceed != 'y':
@@ -112,76 +115,90 @@ def test_ngrok():
         ngrok_url = test_ngrok.get_ngrok_url()
         
         if ngrok_url:
-            print(f"ngrok is running!")
+            print(f"ngrok is running for Issue Bot!")
             print(f"Public URL: {ngrok_url}")
-            print("\nFor GitHub webhook configuration, use:")
+            print("\nFor Issue Bot webhook configuration, use:")
             print(f"Payload URL: {ngrok_url}/webhook")
+            
+            # Check if ngrok is also running for port 5001 (PR Bot)
+            pr_ngrok_url = test_ngrok.get_ngrok_url(port=5001)
+            if pr_ngrok_url:
+                print(f"\nngrok is also running for PR Bot!")
+                print(f"Public URL: {pr_ngrok_url}")
+                print("\nFor PR Bot webhook configuration, use:")
+                print(f"Payload URL: {pr_ngrok_url}/webhook")
+            else:
+                print("\nngrok is not running for PR Bot (port 5001).")
+                print("If you want to test the PR Bot, please start another ngrok instance with:")
+                print("ngrok http 5001")
+            
             return 0
         else:
             print("ngrok is not running or not exposing port 5000.")
             print("Please start ngrok with: ngrok http 5000")
+            print("For PR Bot, start another ngrok instance with: ngrok http 5001")
             return 1
     except Exception as e:
         print(f"Error running ngrok test: {e}")
         return 1
 
 def test_flask_app():
-    """Test if the Flask app can start."""
-    print_header("Testing Flask Application")
+    """Test if the Issue Bot can start."""
+    print_header("Testing Issue Bot")
     
-    print("Starting Flask application in test mode...")
+    print("Starting Issue Bot in test mode...")
     
     # Use a different approach based on the operating system
     if platform.system() == "Windows":
         flask_process = subprocess.Popen(
-            [sys.executable, "app.py"],
+            [sys.executable, "issue_bot.py"],
             creationflags=subprocess.CREATE_NEW_CONSOLE
         )
     else:
         # For macOS/Linux, start in background
         flask_process = subprocess.Popen(
-            [sys.executable, "app.py"],
+            [sys.executable, "issue_bot.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
     
     # Give the Flask app time to start
-    print("Waiting for Flask app to start...")
+    print("Waiting for Issue Bot to start...")
     time.sleep(3)
     
     # Check if the process is still running
     if flask_process.poll() is None:
-        print("Flask application started successfully!")
+        print("Issue Bot started successfully!")
         
         # Ask if user wants to keep it running
-        keep_running = input("Keep Flask app running for webhook tests? (y/n): ").strip().lower()
+        keep_running = input("Keep Issue Bot running for webhook tests? (y/n): ").strip().lower()
         
         if keep_running != 'y':
-            print("Stopping Flask application...")
+            print("Stopping Issue Bot...")
             flask_process.terminate()
             return 0
         else:
-            print("Flask application will continue running in the background.")
+            print("Issue Bot will continue running in the background.")
             print("Remember to stop it manually when you're done testing.")
             return 0
     else:
-        print("ERROR: Flask application failed to start.")
+        print("ERROR: Issue Bot failed to start.")
         return 1
 
 def test_webhook():
     """Run the webhook simulation test."""
     print_header("Testing Webhook Simulation")
     
-    # Check if Flask app is running on port 5000
+    # Check if Issue Bot is running on port 5000
     import socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     result = sock.connect_ex(('localhost', 5000))
     sock.close()
     
     if result != 0:
-        print("ERROR: Flask application is not running on port 5000.")
-        print("Please start the Flask application first with:")
-        print("  python app.py")
+        print("ERROR: Issue Bot is not running on port 5000.")
+        print("Please start the Issue Bot first with:")
+        print("  python issue_bot.py")
         return 1
     
     try:
@@ -219,6 +236,97 @@ def test_webhook():
         print(f"Error running webhook test: {e}")
         return 1
 
+def test_pr_bot():
+    """Test if the PR Bot can start."""
+    print_header("Testing PR Bot")
+    
+    print("Starting PR Bot in test mode...")
+    
+    # Use a different approach based on the operating system
+    if platform.system() == "Windows":
+        flask_process = subprocess.Popen(
+            [sys.executable, "pr_bot.py"],
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
+    else:
+        # For macOS/Linux, start in background
+        flask_process = subprocess.Popen(
+            [sys.executable, "pr_bot.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+    
+    # Give the Flask app time to start
+    print("Waiting for PR Bot to start...")
+    time.sleep(3)
+    
+    # Check if the process is still running
+    if flask_process.poll() is None:
+        print("PR Bot started successfully!")
+        
+        # Ask if user wants to keep it running
+        keep_running = input("Keep PR Bot running for webhook tests? (y/n): ").strip().lower()
+        
+        if keep_running != 'y':
+            print("Stopping PR Bot...")
+            flask_process.terminate()
+            return 0
+        else:
+            print("PR Bot will continue running in the background.")
+            print("Remember to stop it manually when you're done testing.")
+            return 0
+    else:
+        print("ERROR: PR Bot failed to start.")
+        return 1
+
+def test_pr_webhook():
+    """Run the PR webhook simulation test."""
+    print_header("Testing PR Webhook Simulation")
+    
+    # Check if PR Bot is running on port 5001
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = sock.connect_ex(('localhost', 5001))
+    sock.close()
+    
+    if result != 0:
+        print("ERROR: PR Bot is not running on port 5001.")
+        print("Please start the PR Bot first with:")
+        print("  python pr_bot.py")
+        return 1
+    
+    try:
+        # Import the test_pr_bot module and run its functions directly
+        import test_pr_bot
+        
+        print("GitHub PR Bot Test Script")
+        print("=====================")
+        print(f"Bot URL: {test_pr_bot.BOT_URL}")
+        print(f"Repository: {test_pr_bot.REPO_FULL_NAME}")
+        print(f"PR Number: {test_pr_bot.PR_NUMBER}")
+        print(f"PR Creator: {test_pr_bot.PR_CREATOR}")
+        print("=====================")
+        
+        # First, test if the server is running
+        try:
+            root_response = test_pr_bot.requests.get("http://localhost:5001/")
+            print(f"Server status: {root_response.status_code} - {root_response.text.strip()}")
+        except test_pr_bot.requests.exceptions.ConnectionError:
+            print("ERROR: Could not connect to the PR bot server. Make sure it's running on http://localhost:5001")
+            return 1
+        
+        print("\n1. Testing ping event...")
+        test_pr_bot.test_ping_event()
+        
+        print("\n2. Testing PR opened event...")
+        test_pr_bot.simulate_pr_opened_event()
+        
+        print("\nTests completed. Check the bot's console output for more details.")
+        return 0
+    except Exception as e:
+        print(f"Error running PR webhook test: {e}")
+        return 1
+
 def main():
     """Run all tests in sequence."""
     print_header("GitHub Bot Comprehensive Test Suite")
@@ -231,8 +339,10 @@ def main():
     tests = [
         ("GitHub Authentication", test_github_auth),
         ("ngrok Connectivity", test_ngrok),
-        ("Flask Application", test_flask_app),
-        ("Webhook Simulation", test_webhook)
+        ("Issue Bot", test_flask_app),
+        ("Issue Bot Webhook", test_webhook),
+        ("PR Bot", test_pr_bot),
+        ("PR Bot Webhook", test_pr_webhook)
     ]
     
     results = {}
