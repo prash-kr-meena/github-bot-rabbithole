@@ -20,9 +20,21 @@ if not WEBHOOK_SECRET:
     raise ValueError("WEBHOOK_SECRET environment variable not set. Check your .env file.")
 
 BOT_URL = "http://localhost:5000/webhook"  # Local bot URL
-REPO_FULL_NAME = "your-username/your-repo"  # Replace with your actual repo
-ISSUE_NUMBER = 1  # Replace with an actual issue number in your repo
-COMMENTER_LOGIN = "your-username"  # Replace with your GitHub username
+# Replace these placeholder values with your actual GitHub information
+# The test is failing because these placeholders don't correspond to real GitHub resources
+REPO_FULL_NAME = os.getenv("GITHUB_REPO", "your-username/your-repo")  # Use env var or default to placeholder
+ISSUE_NUMBER = int(os.getenv("GITHUB_ISSUE_NUMBER", "1"))  # Use env var or default to placeholder
+COMMENTER_LOGIN = os.getenv("GITHUB_USERNAME", "your-username")  # Use env var or default to placeholder
+
+# Check if using default placeholder values and warn the user
+if REPO_FULL_NAME == "your-username/your-repo" or COMMENTER_LOGIN == "your-username":
+    print("\n⚠️  WARNING: Using placeholder values for GitHub repository or username!")
+    print("The test may fail with a 404 error when trying to interact with the GitHub API.")
+    print("Please set the following environment variables in your .env file:")
+    print("  GITHUB_REPO=your-actual-username/your-actual-repo")
+    print("  GITHUB_ISSUE_NUMBER=1  # Use an actual issue number in your repo")
+    print("  GITHUB_USERNAME=your-actual-username")
+    print("\nSee TESTING.md for more information on fixing this issue.\n")
 
 def create_signature(payload_body):
     """Create a signature for the payload using the webhook secret."""

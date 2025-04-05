@@ -65,6 +65,29 @@ def check_files():
     
     return True
 
+def check_test_env_vars():
+    """Check if the test environment variables are set."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    repo = os.getenv("GITHUB_REPO", "your-username/your-repo")
+    username = os.getenv("GITHUB_USERNAME", "your-username")
+    
+    if repo == "your-username/your-repo" or username == "your-username":
+        print("\n⚠️  WARNING: Using placeholder values for GitHub repository or username!")
+        print("The webhook test may fail with a 404 error when trying to interact with the GitHub API.")
+        print("Please set the following environment variables in your .env file:")
+        print("  GITHUB_REPO=your-actual-username/your-actual-repo")
+        print("  GITHUB_ISSUE_NUMBER=1  # Use an actual issue number in your repo")
+        print("  GITHUB_USERNAME=your-actual-username")
+        print("\nSee TESTING.md for more information on fixing this issue.")
+        
+        proceed = input("Continue anyway? (y/n): ").strip().lower()
+        if proceed != 'y':
+            return False
+    
+    return True
+
 def test_github_auth():
     """Run the GitHub authentication test."""
     print_header("Testing GitHub Authentication")
@@ -201,7 +224,7 @@ def main():
     print_header("GitHub Bot Comprehensive Test Suite")
     
     # Check environment and files
-    if not check_environment() or not check_files():
+    if not check_environment() or not check_files() or not check_test_env_vars():
         return 1
     
     # Run tests in sequence, stopping if any fail
