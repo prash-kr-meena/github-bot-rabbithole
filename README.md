@@ -14,7 +14,9 @@ This project contains two GitHub bots designed for local development and testing
 
 ### PR Bot
 - Listens for pull request events in a GitHub repository
-- Automatically adds a code review comment on the first line of code in the first file of a new PR
+- Clones the repository to analyze code in its full context
+- Uses Anthropic's Claude AI to generate comprehensive code reviews
+- Posts detailed review comments on specific sections of changed code
 - Runs locally with webhook events forwarded via ngrok
 
 ## Prerequisites
@@ -76,6 +78,15 @@ pip install -r requirements.txt
    This will generate a secure random string and offer to update your `.env` file automatically.
    
    Alternatively, you can generate a secret manually with `openssl rand -hex 32` and update the `.env` file yourself.
+
+4. For the PR Bot with AI code review, add the following environment variables:
+   ```
+   # Anthropic API Configuration
+   ANTHROPIC_API_KEY=your_anthropic_api_key
+   ANTHROPIC_BASE_URL=https://api.rabbithole.cred.club
+   ANTHROPIC_MODEL=claude-3-7-sonnet-20250219
+   ```
+   Replace `your_anthropic_api_key` with your actual Anthropic API key.
 
 ### 6. Test Your Setup
 

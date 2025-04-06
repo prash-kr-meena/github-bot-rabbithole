@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-GitHub PR Bot - A simple bot that automatically adds a comment to pull requests when they are opened.
+GitHub PR Bot - A bot that automatically reviews pull requests when they are opened.
 
 This bot listens for webhook events from GitHub, specifically for pull request events
-with the "opened" action, and adds a comment to the PR.
+with the "opened" action, and adds AI-generated code review comments to the PR.
 """
 
 import os
@@ -11,8 +11,12 @@ import hmac
 import hashlib
 import json
 import requests
+import time
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+
+# Import the PR review module
+import pr_review
 
 # Load environment variables
 load_dotenv()
@@ -190,10 +194,14 @@ def webhook():
             pr_number = payload.get('number')
             pr_creator = payload.get('pull_request', {}).get('user', {}).get('login')
             pr_title = payload.get('pull_request', {}).get('title')
+            pr_body = payload.get('pull_request', {}).get('body', '')
             head_sha = payload.get('pull_request', {}).get('head', {}).get('sha')
+            base_branch = payload.get('pull_request', {}).get('base', {}).get('ref', 'main')
+            head_branch = payload.get('pull_request', {}).get('head', {}).get('ref')
             
             print(f"Received new PR #{pr_number} in {repo_full_name} by {pr_creator}")
             print(f"PR Title: '{pr_title}'")
+            print(f"Base branch: {base_branch}, Head branch: {head_branch}")
             
             try:
                 # First, get the list of files in the PR
@@ -208,65 +216,97 @@ def webhook():
                     else:
                         return jsonify({"status": "error", "message": "Failed to post general comment"}), 500
                 
-                # Get the first file in the PR
-                first_file = pr_files[0]
-                file_path = first_file.get('filename')
-                file_sha = first_file.get('sha')
+                # Post an initial comment to let the user know the bot is reviewing the PR
+                initial_comment = (
+                    "# 🤖 AI Code Review in Progress\n\n"
+                    "I'm analyzing your pull request and will provide a detailed code review shortly.\n\n"
+                    f"Reviewing {len(pr_files)} file(s) changed in this PR.\n\n"
+                    "Please wait while I process the code..."
+                )
+                post_pr_comment(repo_full_name, pr_number, initial_comment)
                 
-                print(f"Found file: {file_path}")
+                # Prepare PR info for the review
+                pr_info = {
+                    'title': pr_title,
+                    'description': pr_body,
+                    'author': pr_creator,
+                    'number': pr_number
+                }
                 
-                # Get the content of the file
-                file_content = get_file_content(repo_full_name, file_path, head_sha)
-                
-                if not file_content:
-                    print(f"Could not get content for file {file_path}. Posting a general comment instead.")
-                    # Post a general comment if file content can't be retrieved
-                    success = post_pr_comment(repo_full_name, pr_number, f"PR Comment by Bot - Could not analyze file: {file_path}")
-                    if success:
-                        return jsonify({"status": "success", "message": "General comment posted on PR"})
-                    else:
-                        return jsonify({"status": "error", "message": "Failed to post general comment"}), 500
-                
-                # Find the first line of code
-                first_line = find_first_code_line(file_content)
-                
-                if not first_line:
-                    print(f"No code lines found in file {file_path}. Posting a general comment instead.")
-                    # Post a general comment if no code lines are found
-                    success = post_pr_comment(repo_full_name, pr_number, f"PR Comment by Bot - No code lines found in file: {file_path}")
-                    if success:
-                        return jsonify({"status": "success", "message": "General comment posted on PR"})
-                    else:
-                        return jsonify({"status": "error", "message": "Failed to post general comment"}), 500
-                
-                line_number = first_line.get('line_number')
-                line_content = first_line.get('content')
-                
-                print(f"Found first code line at line {line_number}: {line_content}")
-                
-                # Create a review comment
-                review_comment = f"Code Review Comment by Bot\n\nReviewing line {line_number}: `{line_content.strip()}`"
-                
-                # Post the review comment
-                success = post_pr_review_comment(
-                    repo_full_name,
-                    pr_number,
-                    head_sha,
-                    file_path,
-                    line_number,
-                    review_comment
+                # Generate AI reviews for each file in the PR
+                print(f"Generating AI reviews for {len(pr_files)} files...")
+                reviews = pr_review.review_pr_files(
+                    repo_full_name, 
+                    pr_number, 
+                    pr_files, 
+                    base_branch, 
+                    head_branch, 
+                    pr_info
                 )
                 
-                if success:
-                    return jsonify({"status": "success", "message": "Review comment posted on PR"})
-                else:
-                    # Fallback to posting a general comment if review comment fails
-                    print("Failed to post review comment. Posting a general comment instead.")
-                    fallback_success = post_pr_comment(repo_full_name, pr_number, "PR Comment by Bot - Could not post review comment")
-                    if fallback_success:
-                        return jsonify({"status": "partial_success", "message": "Posted general comment instead of review comment"})
+                # Post review comments for each file
+                success_count = 0
+                failure_count = 0
+                
+                for review_data in reviews:
+                    file_info = review_data['file']
+                    review_content = review_data['review']
+                    file_path = file_info['path']
+                    
+                    print(f"Posting review for file: {file_path}")
+                    
+                    # For each changed section, post a review comment
+                    if file_info['changed_sections']:
+                        for section in file_info['changed_sections']:
+                            # Get the line number for the comment
+                            line_number = section['start_line']
+                            
+                            # Create a review comment
+                            comment = f"# AI Code Review for `{file_path}`\n\n{review_content}"
+                            
+                            # Post the review comment
+                            success = post_pr_review_comment(
+                                repo_full_name,
+                                pr_number,
+                                head_sha,
+                                file_path,
+                                line_number,
+                                comment
+                            )
+                            
+                            if success:
+                                success_count += 1
+                            else:
+                                failure_count += 1
+                                
+                            # Add a small delay to avoid rate limiting
+                            time.sleep(1)
                     else:
-                        return jsonify({"status": "error", "message": "Failed to post any comment"}), 500
+                        # If no changed sections were identified, post a general comment for the file
+                        comment = f"# AI Code Review for `{file_path}`\n\n{review_content}"
+                        success = post_pr_comment(repo_full_name, pr_number, comment)
+                        
+                        if success:
+                            success_count += 1
+                        else:
+                            failure_count += 1
+                
+                # Post a summary comment
+                summary = (
+                    "# 🤖 AI Code Review Complete\n\n"
+                    f"I've reviewed {len(reviews)} file(s) in this pull request.\n\n"
+                    f"- Successfully posted {success_count} review comment(s)\n"
+                    f"- Failed to post {failure_count} review comment(s)\n\n"
+                    "Please review the comments and make any necessary changes. "
+                    "If you have any questions about the review, feel free to ask!"
+                )
+                post_pr_comment(repo_full_name, pr_number, summary)
+                
+                return jsonify({
+                    "status": "success", 
+                    "message": f"Posted {success_count} review comments on PR",
+                    "failures": failure_count
+                })
             except Exception as e:
                 error_message = f"Failed to interact with GitHub API: {str(e)}"
                 print(error_message)

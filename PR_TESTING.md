@@ -1,6 +1,6 @@
-# Testing the GitHub PR Bot
+# Testing the GitHub PR Bot with AI Code Review
 
-This document provides instructions for testing the GitHub PR Bot, which automatically adds code review comments to pull requests.
+This document provides instructions for testing the GitHub PR Bot, which automatically adds AI-powered code review comments to pull requests.
 
 ## Prerequisites
 
@@ -26,6 +26,11 @@ WEBHOOK_SECRET=your_webhook_secret
 GITHUB_REPO=your-username/your-repo
 GITHUB_PR_NUMBER=1  # An actual PR number in your repository
 GITHUB_USERNAME=your-username
+
+# Anthropic API Configuration
+ANTHROPIC_API_KEY=your_anthropic_api_key
+ANTHROPIC_BASE_URL=https://api.rabbithole.cred.club
+ANTHROPIC_MODEL=claude-3-7-sonnet-20250219
 ```
 
 Replace the placeholder values with your actual information:
@@ -34,6 +39,9 @@ Replace the placeholder values with your actual information:
 - `GITHUB_REPO`: The full name of your repository (username/repo-name)
 - `GITHUB_PR_NUMBER`: The number of an existing pull request in your repository
 - `GITHUB_USERNAME`: Your GitHub username
+- `ANTHROPIC_API_KEY`: Your Anthropic API key
+- `ANTHROPIC_BASE_URL`: The base URL for the Anthropic API (default is provided)
+- `ANTHROPIC_MODEL`: The Anthropic model to use for code reviews (default is provided)
 
 ### 2. Install Dependencies
 
@@ -119,11 +127,33 @@ If the test is successful:
 
 ## How It Works
 
-The PR bot:
-1. Receives a webhook event when a PR is opened
-2. Fetches the list of files in the PR
-3. Gets the content of the first file
-4. Finds the first line of code in that file
-5. Adds a review comment on that line
+The PR bot with AI code review:
 
-For testing purposes, the `test_pr_bot.py` script simulates these webhook events without requiring an actual GitHub repository.
+1. **Webhook Processing**:
+   - Receives a webhook event when a PR is opened
+   - Verifies the webhook signature
+   - Extracts PR information (title, description, author, etc.)
+
+2. **Repository Analysis**:
+   - Clones the repository to a local `.repos` directory
+   - Fetches the list of files changed in the PR
+   - For each file, gets both the full content and the specific changes (diff)
+
+3. **AI Code Review**:
+   - Sends the file content and changes to the Anthropic API
+   - Provides a comprehensive prompt with code review guidelines
+   - Receives an AI-generated code review with suggestions and feedback
+
+4. **Review Comments**:
+   - Posts review comments on specific sections of code that were changed
+   - Each comment includes the AI-generated review for that file
+   - Posts a summary comment with an overview of the review process
+
+5. **Testing**:
+   - The `test_pr_bot.py` script provides several test options:
+     - Ping event test: Verifies the webhook endpoint
+     - PR opened event test: Tests the full PR review process
+     - Repository cloning test: Tests the repository cloning functionality
+     - AI code review test: Tests the AI code review generation
+
+The bot uses a temporary directory to store cloned repositories, which allows it to analyze the code in its full context rather than just the isolated changes. This provides more comprehensive and accurate code reviews.

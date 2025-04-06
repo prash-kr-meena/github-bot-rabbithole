@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for the GitHub PR Bot.
+Test script for the GitHub PR Bot with AI Code Review.
 This script simulates webhook events to test the PR bot functionality locally.
 """
 
@@ -9,8 +9,12 @@ import json
 import hmac
 import hashlib
 import requests
+import unittest.mock
 from dotenv import load_dotenv
 import time
+import tempfile
+import shutil
+import subprocess
 
 # Load environment variables
 load_dotenv()
@@ -22,6 +26,7 @@ GITHUB_PAT = os.getenv("GITHUB_PAT", "")
 REPO_FULL_NAME = os.getenv("GITHUB_REPO", "your-username/your-repo")
 PR_NUMBER = os.getenv("GITHUB_PR_NUMBER", "1")
 PR_CREATOR = os.getenv("GITHUB_USERNAME", "your-username")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 def sign_payload(payload):
     """Create a GitHub-compatible HMAC signature for the webhook payload."""
@@ -202,7 +207,146 @@ def setup_mocks():
         }
     )
     
+    # Mock the Anthropic API response
+    anthropic_url = "https://api.rabbithole.cred.club/messages"
+    adapter.register_uri(
+        'POST', 
+        anthropic_url,
+        json={
+            "id": "msg_01234567890123456789",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-7-sonnet-20250219",
+            "content": [
+                {
+                    "type": "text",
+                    "text": """
+# Code Review
+
+## Summary
+The code is a simple Python script that defines a `hello_world()` function which prints "Hello, World!". Overall, the code is clean and follows good practices for a simple script.
+
+## Specific Issues
+No significant issues found.
+
+## Suggestions
+1. Consider adding a docstring to the `hello_world()` function to explain its purpose.
+2. For better compatibility, you might want to use `if __name__ == "__main__":` guard (which you already have).
+
+## Positive Aspects
+- Clean and readable code
+- Proper use of the `if __name__ == "__main__":` guard
+- Good naming conventions
+- Appropriate comments
+"""
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 150
+            }
+        }
+    )
+    
     return session
+
+def create_test_repo():
+    """Create a test repository for testing the PR review functionality."""
+    repo_dir = os.path.join(tempfile.gettempdir(), "test_repo")
+    
+    # Clean up any existing test repository
+    if os.path.exists(repo_dir):
+        shutil.rmtree(repo_dir)
+    
+    # Create a new directory
+    os.makedirs(repo_dir)
+    
+    # Initialize a git repository
+    subprocess.run(["git", "init"], cwd=repo_dir, check=True)
+    
+    # Create a test file
+    test_file_path = os.path.join(repo_dir, "test_file.py")
+    with open(test_file_path, "w") as f:
+        f.write(get_mock_file_content())
+    
+    # Add and commit the file
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=repo_dir, check=True)
+    
+    return repo_dir
+
+def test_repository_cloning():
+    """Test the repository cloning functionality."""
+    print("\n3. Testing repository cloning...")
+    
+    # Import the PR review module
+    import pr_review
+    
+    # Create a test repository
+    repo_dir = create_test_repo()
+    
+    # Mock the clone_repository function to return the test repository
+    with unittest.mock.patch('pr_review.clone_repository', return_value=repo_dir):
+        # Test the get_file_content_from_repo function
+        file_content = pr_review.get_file_content_from_repo(repo_dir, "test_file.py")
+        
+        if file_content and "hello_world" in file_content:
+            print("Repository cloning test passed!")
+        else:
+            print("Repository cloning test failed!")
+    
+    return repo_dir
+
+def test_ai_code_review():
+    """Test the AI code review functionality."""
+    print("\n4. Testing AI code review...")
+    
+    # Import the PR review module
+    import pr_review
+    
+    # Create a test repository
+    repo_dir = create_test_repo()
+    
+    # Create test file info
+    file_info = {
+        'path': 'test_file.py',
+        'full_content': get_mock_file_content(),
+        'diff': '@@ -0,0 +1,9 @@\n+#!/usr/bin/env python3\n+# This is a test file for the PR bot\n+\n+def hello_world():\n+    # A simple function that prints hello world\n+    print("Hello, World!")\n+\n+if __name__ == "__main__":\n+    hello_world()',
+        'changed_sections': [{'start_line': 1, 'end_line': 9, 'content': ['#!/usr/bin/env python3', '# This is a test file for the PR bot', '', 'def hello_world():', '    # A simple function that prints hello world', '    print("Hello, World!")', '', 'if __name__ == "__main__":', '    hello_world()']}]
+    }
+    
+    # Create test PR info
+    pr_info = {
+        'title': 'Test PR',
+        'description': 'This is a test PR',
+        'author': 'test-user',
+        'number': 1
+    }
+    
+    # Mock the Anthropic client
+    with unittest.mock.patch('anthropic.Anthropic'):
+        # Mock the get_ai_code_review function to return a test review
+        with unittest.mock.patch('pr_review.get_ai_code_review', return_value="Test code review"):
+            # Test the review_pr_files function
+            with unittest.mock.patch('pr_review.clone_repository', return_value=repo_dir):
+                # Test the analyze_pr_file function
+                with unittest.mock.patch('pr_review.analyze_pr_file', return_value=file_info):
+                    reviews = pr_review.review_pr_files(
+                        REPO_FULL_NAME,
+                        PR_NUMBER,
+                        get_mock_pr_files(),
+                        "main",
+                        "feature-branch",
+                        pr_info
+                    )
+                    
+                    if reviews and len(reviews) > 0 and reviews[0]['review'] == "Test code review":
+                        print("AI code review test passed!")
+                    else:
+                        print("AI code review test failed!")
 
 if __name__ == "__main__":
     print("GitHub PR Bot Test Script")
@@ -226,10 +370,30 @@ if __name__ == "__main__":
     print("If you're using placeholder values for GITHUB_REPO, the bot will fall back to posting a general comment.")
     print("For full testing with review comments, set up real GitHub repository values in your .env file.")
     
-    print("\n1. Testing ping event...")
-    test_ping_event()
+    # Ask the user which tests to run
+    print("\nAvailable tests:")
+    print("1. Ping event test")
+    print("2. PR opened event test")
+    print("3. Repository cloning test")
+    print("4. AI code review test")
+    print("5. Run all tests")
     
-    print("\n2. Testing PR opened event...")
-    simulate_pr_opened_event()
+    choice = input("\nEnter the number of the test to run (or 5 for all): ")
+    
+    if choice == "1" or choice == "5":
+        print("\n1. Testing ping event...")
+        test_ping_event()
+    
+    if choice == "2" or choice == "5":
+        print("\n2. Testing PR opened event...")
+        simulate_pr_opened_event()
+    
+    if choice == "3" or choice == "5":
+        print("\n3. Testing repository cloning...")
+        test_repository_cloning()
+    
+    if choice == "4" or choice == "5":
+        print("\n4. Testing AI code review...")
+        test_ai_code_review()
     
     print("\nTests completed. Check the bot's console output for more details.")
