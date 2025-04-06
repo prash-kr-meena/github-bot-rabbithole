@@ -1,92 +1,129 @@
-# Testing the PR Bot
+# Testing the GitHub PR Bot
 
-This document provides detailed information about testing the GitHub PR bot and troubleshooting common issues.
+This document provides instructions for testing the GitHub PR Bot, which automatically adds code review comments to pull requests.
 
-## Understanding the PR Bot
+## Prerequisites
 
-The PR bot is designed to automatically add a comment to pull requests when they are opened. It listens for the `pull_request` event with the `opened` action and adds a comment saying "PR Comment by Bot" to the PR.
+Before testing the PR bot, ensure you have:
 
-## Testing the PR Bot Locally
+1. A GitHub account
+2. A GitHub repository where you have admin permissions
+3. A GitHub Personal Access Token (PAT) with appropriate permissions
+4. ngrok installed for exposing your local server to the internet
 
-### Prerequisites
+## Setup
 
-Before testing the PR bot, make sure you have:
+### 1. Environment Variables
 
-1. Set up your environment variables in the `.env` file:
-   ```
-   GITHUB_PAT=your-personal-access-token
-   WEBHOOK_SECRET=your-webhook-secret
-   GITHUB_REPO=your-username/your-repo
-   GITHUB_PR_NUMBER=1
-   GITHUB_USERNAME=your-username
-   ```
+Create or update your `.env` file with the following variables:
 
-2. Installed all required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```
+# GitHub Authentication
+GITHUB_PAT=your_personal_access_token
+WEBHOOK_SECRET=your_webhook_secret
 
-### Running the PR Bot
+# Repository Information
+GITHUB_REPO=your-username/your-repo
+GITHUB_PR_NUMBER=1  # An actual PR number in your repository
+GITHUB_USERNAME=your-username
+```
 
-1. Start the PR bot:
-   ```bash
-   python pr_bot.py
-   ```
+Replace the placeholder values with your actual information:
+- `GITHUB_PAT`: Your GitHub Personal Access Token
+- `WEBHOOK_SECRET`: A secret string used to verify webhook payloads
+- `GITHUB_REPO`: The full name of your repository (username/repo-name)
+- `GITHUB_PR_NUMBER`: The number of an existing pull request in your repository
+- `GITHUB_USERNAME`: Your GitHub username
 
-2. In a separate terminal, start ngrok to expose your local server:
+### 2. Install Dependencies
+
+Install the required Python packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure GitHub Webhook
+
+1. Start ngrok to expose your local server:
    ```bash
    ngrok http 5001
    ```
 
-3. Configure a GitHub webhook for your repository:
+2. Note the public URL provided by ngrok (e.g., `https://abcd1234.ngrok.io`)
+
+3. In your GitHub repository, go to Settings > Webhooks > Add webhook:
    - Payload URL: `https://your-ngrok-url/webhook`
    - Content type: `application/json`
-   - Secret: The same webhook secret from your `.env` file
-   - Events: Select "Pull requests" only
+   - Secret: The same value as `WEBHOOK_SECRET` in your `.env` file
+   - Events: Select "Pull requests"
+   - Active: Checked
 
-### Testing with the Test Script
+## Running the PR Bot
 
-You can use the `test_pr_bot.py` script to simulate a PR opened event without actually creating a PR on GitHub:
+Start the PR bot with:
+
+```bash
+python pr_bot.py
+```
+
+The bot will run on `http://localhost:5001` and listen for webhook events from GitHub.
+
+## Testing
+
+### Automated Testing
+
+Run the automated test script:
 
 ```bash
 python test_pr_bot.py
 ```
 
-This script will:
-1. Send a simulated ping event to verify the webhook endpoint is working
-2. Send a simulated PR opened event to test the bot's functionality
+This script simulates:
+1. A ping event to verify the webhook endpoint
+2. A PR opened event to test the bot's ability to add review comments
 
-## Common Issues
+### Manual Testing
 
-### 404 Not Found Error
+To test the bot manually:
 
-This occurs when the bot tries to interact with a GitHub repository or PR that doesn't exist. Make sure:
-- You've set the `GITHUB_REPO` environment variable to a real repository that you own
-- The repository name is spelled correctly
-- Your GitHub Personal Access Token (PAT) has access to this repository
-- If testing with a real PR, make sure the `GITHUB_PR_NUMBER` corresponds to an actual PR in your repository
+1. Ensure the PR bot is running (`python pr_bot.py`)
+2. Create a new pull request in your GitHub repository
+3. The bot should automatically add a review comment on the first line of code in the first file of the PR
 
-### 401 Unauthorized Error
+## Understanding the Results
 
-This occurs when your GitHub PAT is invalid or doesn't have the necessary permissions. Make sure:
-- Your PAT is correct and hasn't expired
-- Your PAT has the `repo` scope (or at least `pull_requests:write` for this specific bot)
+### Successful Test
 
-### Webhook Not Triggering
+If the test is successful:
+- The ping event should return a 200 status code
+- The PR opened event should return a 200 status code
+- The bot should post a review comment on the first line of code in the PR
 
-If your webhook isn't triggering when you create a new PR:
-1. Check that ngrok is running and the URL is correctly configured in GitHub
-2. Verify that you selected "Pull requests" in the webhook events
-3. Check the webhook secret matches between GitHub and your `.env` file
-4. Look at the webhook deliveries in GitHub to see if there are any errors
+### Common Issues
 
-## Extending the PR Bot
+1. **404 Not Found Error**:
+   - Ensure your `GITHUB_REPO` and `GITHUB_PR_NUMBER` are correct
+   - Verify that your GitHub PAT has the necessary permissions
 
-You can extend the PR bot by:
+2. **401 Unauthorized Error**:
+   - Check that your `GITHUB_PAT` is valid and has not expired
+   - Ensure the PAT has the necessary permissions (repo scope)
 
-1. Adding more actions to respond to (e.g., `synchronize`, `closed`, `reopened`)
-2. Customizing the comment message
-3. Adding more complex logic, such as checking PR contents or labels
-4. Integrating with other services or APIs
+3. **Signature Verification Failed**:
+   - Ensure the `WEBHOOK_SECRET` in your `.env` file matches the one configured in GitHub
 
-To modify the bot's behavior, edit the `pr_bot.py` file and update the webhook handler function.
+4. **No Review Comment Added**:
+   - Check the bot's console output for error messages
+   - Verify that the PR contains files with actual code (not just documentation or empty files)
+
+## How It Works
+
+The PR bot:
+1. Receives a webhook event when a PR is opened
+2. Fetches the list of files in the PR
+3. Gets the content of the first file
+4. Finds the first line of code in that file
+5. Adds a review comment on that line
+
+For testing purposes, the `test_pr_bot.py` script simulates these webhook events without requiring an actual GitHub repository.

@@ -3,7 +3,7 @@
 This project contains two GitHub bots designed for local development and testing:
 
 1. **Issue Bot**: Responds to issue comments with a greeting when triggered with the `/greet` command
-2. **PR Bot**: Automatically adds a comment to pull requests when they are opened
+2. **PR Bot**: Automatically adds code review comments to pull requests when they are opened
 
 ## Features
 
@@ -14,7 +14,7 @@ This project contains two GitHub bots designed for local development and testing
 
 ### PR Bot
 - Listens for pull request events in a GitHub repository
-- Automatically adds a comment when a new PR is opened
+- Automatically adds a code review comment on the first line of code in the first file of a new PR
 - Runs locally with webhook events forwarded via ngrok
 
 ## Prerequisites
@@ -188,9 +188,11 @@ ngrok will display a forwarding URL (e.g., `https://b2c3d4e5.ngrok.io`). Copy th
 
 #### Step 4: Test the PR Bot
 
-1. Create a new pull request in your repository
+1. Create a new pull request in your repository that includes code files
 2. Watch your PR Bot logs to see the webhook being received
-3. The bot should automatically add a comment to the PR: "PR Comment by Bot"
+3. The bot should automatically add a code review comment on the first line of code in the first file of the PR
+
+> **Note:** For detailed testing instructions, see the [PR Bot Testing Guide](PR_TESTING.md).
 
 > **Note:** For detailed instructions on installing and running ngrok, including troubleshooting tips, see the [ngrok setup guide](NGROK_SETUP.md).
 

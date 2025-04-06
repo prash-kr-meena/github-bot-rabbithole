@@ -43,8 +43,85 @@ def verify_signature(payload_body, signature_header):
     
     return hmac.compare_digest(expected_signature, signature_header)
 
+def get_pr_files(repo_full_name, pr_number):
+    """Get the list of files in a pull request."""
+    url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}/files"
+    headers = {
+        "Authorization": f"token {GITHUB_PAT}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Failed to get PR files: {response.status_code} {response.text}")
+        return None
+
+def get_file_content(repo_full_name, file_path, commit_sha):
+    """Get the content of a file at a specific commit."""
+    url = f"https://api.github.com/repos/{repo_full_name}/contents/{file_path}?ref={commit_sha}"
+    headers = {
+        "Authorization": f"token {GITHUB_PAT}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code == 200:
+        content_data = response.json()
+        if content_data.get("encoding") == "base64":
+            import base64
+            content = base64.b64decode(content_data.get("content")).decode("utf-8")
+            return content
+        return None
+    else:
+        print(f"Failed to get file content: {response.status_code} {response.text}")
+        return None
+
+def find_first_code_line(content):
+    """Find the first non-empty line of code in a file."""
+    if not content:
+        return None
+    
+    lines = content.split("\n")
+    for i, line in enumerate(lines):
+        # Skip empty lines and comment-only lines
+        stripped_line = line.strip()
+        if stripped_line and not stripped_line.startswith(("#", "//", "/*", "*", "'")):
+            return {
+                "line_number": i + 1,  # GitHub line numbers are 1-based
+                "content": line
+            }
+    
+    return None
+
+def post_pr_review_comment(repo_full_name, pr_number, commit_id, path, position, body):
+    """Post a review comment on a specific line of code in a pull request."""
+    url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}/comments"
+    headers = {
+        "Authorization": f"token {GITHUB_PAT}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    data = {
+        "commit_id": commit_id,
+        "path": path,
+        "position": position,  # Line number in the diff
+        "body": body
+    }
+    
+    response = requests.post(url, headers=headers, json=data)
+    
+    if response.status_code == 201:
+        print(f"Successfully posted review comment on PR #{pr_number} in {repo_full_name}")
+        return True
+    else:
+        print(f"Failed to post review comment: {response.status_code} {response.text}")
+        return False
+
 def post_pr_comment(repo_full_name, pr_number, comment_body):
-    """Post a comment on a GitHub pull request."""
+    """Post a general comment on a GitHub pull request."""
     url = f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/comments"
     headers = {
         "Authorization": f"token {GITHUB_PAT}",
@@ -113,20 +190,83 @@ def webhook():
             pr_number = payload.get('number')
             pr_creator = payload.get('pull_request', {}).get('user', {}).get('login')
             pr_title = payload.get('pull_request', {}).get('title')
+            head_sha = payload.get('pull_request', {}).get('head', {}).get('sha')
             
             print(f"Received new PR #{pr_number} in {repo_full_name} by {pr_creator}")
             print(f"PR Title: '{pr_title}'")
             
-            # Create a comment for the PR
-            comment = "PR Comment by Bot"
-            
             try:
-                # Post the comment on the PR
-                success = post_pr_comment(repo_full_name, pr_number, comment)
+                # First, get the list of files in the PR
+                pr_files = get_pr_files(repo_full_name, pr_number)
+                
+                if not pr_files or len(pr_files) == 0:
+                    print("No files found in the PR. Posting a general comment instead.")
+                    # Post a general comment if no files are found
+                    success = post_pr_comment(repo_full_name, pr_number, "PR Comment by Bot - No files found to review")
+                    if success:
+                        return jsonify({"status": "success", "message": "General comment posted on PR"})
+                    else:
+                        return jsonify({"status": "error", "message": "Failed to post general comment"}), 500
+                
+                # Get the first file in the PR
+                first_file = pr_files[0]
+                file_path = first_file.get('filename')
+                file_sha = first_file.get('sha')
+                
+                print(f"Found file: {file_path}")
+                
+                # Get the content of the file
+                file_content = get_file_content(repo_full_name, file_path, head_sha)
+                
+                if not file_content:
+                    print(f"Could not get content for file {file_path}. Posting a general comment instead.")
+                    # Post a general comment if file content can't be retrieved
+                    success = post_pr_comment(repo_full_name, pr_number, f"PR Comment by Bot - Could not analyze file: {file_path}")
+                    if success:
+                        return jsonify({"status": "success", "message": "General comment posted on PR"})
+                    else:
+                        return jsonify({"status": "error", "message": "Failed to post general comment"}), 500
+                
+                # Find the first line of code
+                first_line = find_first_code_line(file_content)
+                
+                if not first_line:
+                    print(f"No code lines found in file {file_path}. Posting a general comment instead.")
+                    # Post a general comment if no code lines are found
+                    success = post_pr_comment(repo_full_name, pr_number, f"PR Comment by Bot - No code lines found in file: {file_path}")
+                    if success:
+                        return jsonify({"status": "success", "message": "General comment posted on PR"})
+                    else:
+                        return jsonify({"status": "error", "message": "Failed to post general comment"}), 500
+                
+                line_number = first_line.get('line_number')
+                line_content = first_line.get('content')
+                
+                print(f"Found first code line at line {line_number}: {line_content}")
+                
+                # Create a review comment
+                review_comment = f"Code Review Comment by Bot\n\nReviewing line {line_number}: `{line_content.strip()}`"
+                
+                # Post the review comment
+                success = post_pr_review_comment(
+                    repo_full_name,
+                    pr_number,
+                    head_sha,
+                    file_path,
+                    line_number,
+                    review_comment
+                )
+                
                 if success:
-                    return jsonify({"status": "success", "message": "Comment posted on PR"})
+                    return jsonify({"status": "success", "message": "Review comment posted on PR"})
                 else:
-                    return jsonify({"status": "error", "message": "Failed to post comment"}), 500
+                    # Fallback to posting a general comment if review comment fails
+                    print("Failed to post review comment. Posting a general comment instead.")
+                    fallback_success = post_pr_comment(repo_full_name, pr_number, "PR Comment by Bot - Could not post review comment")
+                    if fallback_success:
+                        return jsonify({"status": "partial_success", "message": "Posted general comment instead of review comment"})
+                    else:
+                        return jsonify({"status": "error", "message": "Failed to post any comment"}), 500
             except Exception as e:
                 error_message = f"Failed to interact with GitHub API: {str(e)}"
                 print(error_message)
