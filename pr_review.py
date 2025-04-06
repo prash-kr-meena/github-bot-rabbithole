@@ -107,6 +107,7 @@ def identify_changed_sections(diff_output):
     
     sections = []
     current_section = None
+    current_line_number = 0
     
     for line in diff_output.split('\n'):
         if line.startswith('@@'):
@@ -127,17 +128,148 @@ def identify_changed_sections(diff_output):
                         'start_line': start_line,
                         'end_line': start_line + count - 1,
                         'content': [],
-                        'header': line
+                        'header': line,
+                        'changed_lines': []  # Track individual changed lines
                     }
+                    current_line_number = start_line
         elif current_section is not None:
             if line.startswith('+') and not line.startswith('+++'):
                 # This is an added line
                 current_section['content'].append(line[1:])
+                # Track the specific line with its content
+                current_section['changed_lines'].append({
+                    'line_number': current_line_number,
+                    'content': line[1:],
+                    'type': 'added'
+                })
+            elif line.startswith(' '):
+                # This is an unchanged line
+                pass
+            elif not line.startswith('-'):
+                # This is not a removed line, so increment the line counter
+                pass
+            
+            # Increment line number for non-removed lines
+            if not line.startswith('-'):
+                current_line_number += 1
     
     if current_section:
         sections.append(current_section)
     
     return sections
+
+def analyze_code_patterns(file_content, file_path):
+    """Analyze code patterns to identify the technology stack and common patterns.
+    
+    Args:
+        file_content (str): The content of the file
+        file_path (str): The path of the file
+        
+    Returns:
+        dict: Information about the technology and patterns
+    """
+    tech_info = {
+        'language': 'unknown',
+        'frameworks': [],
+        'patterns': [],
+        'imports': []
+    }
+    
+    # Determine language based on file extension
+    ext = file_path.split('.')[-1].lower() if '.' in file_path else ''
+    
+    if ext == 'py':
+        tech_info['language'] = 'python'
+        
+        # Look for common Python frameworks
+        if 'import flask' in file_content.lower() or 'from flask import' in file_content.lower():
+            tech_info['frameworks'].append('flask')
+        if 'import django' in file_content.lower() or 'from django import' in file_content.lower():
+            tech_info['frameworks'].append('django')
+        if 'import pandas' in file_content.lower() or 'from pandas import' in file_content.lower():
+            tech_info['frameworks'].append('pandas')
+        if 'import numpy' in file_content.lower() or 'from numpy import' in file_content.lower():
+            tech_info['frameworks'].append('numpy')
+        if 'import tensorflow' in file_content.lower() or 'from tensorflow import' in file_content.lower():
+            tech_info['frameworks'].append('tensorflow')
+        if 'import torch' in file_content.lower() or 'from torch import' in file_content.lower():
+            tech_info['frameworks'].append('pytorch')
+            
+        # Extract imports
+        import_lines = []
+        for line in file_content.split('\n'):
+            line = line.strip()
+            if line.startswith('import ') or line.startswith('from '):
+                import_lines.append(line)
+        tech_info['imports'] = import_lines
+        
+        # Identify common patterns
+        if 'class ' in file_content and ('def __init__' in file_content or 'def __init__(self' in file_content):
+            tech_info['patterns'].append('object_oriented')
+        if 'async def ' in file_content:
+            tech_info['patterns'].append('async')
+        if '@app.route' in file_content:
+            tech_info['patterns'].append('flask_routes')
+        if '@dataclass' in file_content:
+            tech_info['patterns'].append('dataclasses')
+        
+    elif ext in ['js', 'jsx', 'ts', 'tsx']:
+        tech_info['language'] = 'javascript' if ext in ['js', 'jsx'] else 'typescript'
+        
+        # Look for common JS/TS frameworks
+        if 'import React' in file_content or 'from "react"' in file_content:
+            tech_info['frameworks'].append('react')
+        if 'import { Component' in file_content:
+            tech_info['frameworks'].append('angular')
+        if 'import Vue' in file_content:
+            tech_info['frameworks'].append('vue')
+        if 'express' in file_content.lower():
+            tech_info['frameworks'].append('express')
+            
+        # Identify common patterns
+        if 'class ' in file_content and 'constructor' in file_content:
+            tech_info['patterns'].append('object_oriented')
+        if 'function*' in file_content or 'yield ' in file_content:
+            tech_info['patterns'].append('generators')
+        if '=>' in file_content:
+            tech_info['patterns'].append('arrow_functions')
+        if 'async ' in file_content:
+            tech_info['patterns'].append('async')
+            
+    elif ext in ['java', 'kt']:
+        tech_info['language'] = 'java' if ext == 'java' else 'kotlin'
+        
+        # Look for common Java frameworks
+        if 'import org.springframework' in file_content:
+            tech_info['frameworks'].append('spring')
+        if 'import android' in file_content:
+            tech_info['frameworks'].append('android')
+            
+    elif ext in ['rb']:
+        tech_info['language'] = 'ruby'
+        if 'Rails' in file_content:
+            tech_info['frameworks'].append('rails')
+            
+    elif ext in ['go']:
+        tech_info['language'] = 'go'
+        
+    elif ext in ['php']:
+        tech_info['language'] = 'php'
+        if 'Laravel' in file_content:
+            tech_info['frameworks'].append('laravel')
+            
+    elif ext in ['cs']:
+        tech_info['language'] = 'csharp'
+        if 'using Microsoft.AspNetCore' in file_content:
+            tech_info['frameworks'].append('aspnet')
+            
+    elif ext in ['html', 'htm']:
+        tech_info['language'] = 'html'
+        
+    elif ext in ['css', 'scss', 'sass', 'less']:
+        tech_info['language'] = ext
+        
+    return tech_info
 
 def get_file_content_from_repo(repo_dir, file_path):
     """Get the content of a file from the local repository.
@@ -167,6 +299,54 @@ def generate_code_review_prompt(file_info, pr_info):
     Returns:
         str: The prompt for the AI code review
     """
+    # Determine the language based on file extension
+    file_path = file_info.get('path', '')
+    ext = file_path.split('.')[-1].lower() if '.' in file_path else ''
+    
+    language_specific_guidelines = ""
+    if ext == 'py':
+        language_specific_guidelines = """
+### Python-Specific Best Practices
+- Does the code follow PEP 8 style guidelines?
+- Are list comprehensions used instead of loops where appropriate?
+- Are context managers (with statements) used properly?
+- Are generator expressions used for large data?
+- Is isinstance() preferred over type checking?
+- Are f-strings used for formatting (Python 3.6+)?
+- Is pathlib used instead of os.path?
+- Are exceptions preferred over error codes?
+- Are specific exceptions used instead of bare except clauses?
+- Are type annotations added (PEP 484)?
+- Are built-in functions/methods used effectively?
+- Is string concatenation done efficiently?
+- Are collections module data structures used appropriately?
+- Is logging used instead of print()?
+"""
+    elif ext in ['js', 'jsx', 'ts', 'tsx']:
+        language_specific_guidelines = """
+### JavaScript/TypeScript-Specific Best Practices
+- Is ES6+ syntax used appropriately?
+- Are promises and async/await used correctly?
+- Are const/let used instead of var?
+- Is destructuring used for cleaner code?
+- Are arrow functions used where appropriate?
+- Are template literals used for string interpolation?
+- Are spread/rest operators used effectively?
+- Is proper error handling implemented for async operations?
+- Are default parameters used where appropriate?
+- Are optional chaining and nullish coalescing used for safer code?
+- Is proper module import/export syntax used?
+"""
+    
+    # Extract changed lines for more targeted review
+    changed_lines = []
+    for section in file_info.get('changed_sections', []):
+        if 'changed_lines' in section:
+            for line_info in section['changed_lines']:
+                changed_lines.append(f"Line {line_info['line_number']}: {line_info['content']}")
+    
+    changed_lines_text = "\n".join(changed_lines) if changed_lines else "No specific changed lines identified."
+    
     prompt = f"""
 # Code Review Request
 
@@ -177,17 +357,20 @@ def generate_code_review_prompt(file_info, pr_info):
 - **File**: {file_info.get('path', 'N/A')}
 
 ## Review Task
-You are a senior software engineer conducting a code review. Please review the code changes below and provide constructive feedback.
+You are a senior software engineer conducting a code review. I need you to provide a DETAILED and SPECIFIC code review with exact line numbers for each issue you identify. Focus on providing actionable feedback for each problematic line of code.
 
-### File Context
+### File Context (Full File)
 ```
 {file_info.get('full_content', 'No content available')}
 ```
 
-### Changes Made
+### Changes Made (Diff)
 ```diff
 {file_info.get('diff', 'No diff available')}
 ```
+
+### Specific Changed Lines
+{changed_lines_text}
 
 ## Review Guidelines
 Please focus on the following aspects in your review:
@@ -213,21 +396,7 @@ Please focus on the following aspects in your review:
 - Are proper file permissions set?
 - Is eval() or exec() avoided with user input?
 
-### Python-Specific Best Practices
-- Does the code follow PEP 8 style guidelines?
-- Are list comprehensions used instead of loops where appropriate?
-- Are context managers (with statements) used properly?
-- Are generator expressions used for large data?
-- Is isinstance() preferred over type checking?
-- Are f-strings used for formatting (Python 3.6+)?
-- Is pathlib used instead of os.path?
-- Are exceptions preferred over error codes?
-- Are specific exceptions used instead of bare except clauses?
-- Are type annotations added (PEP 484)?
-- Are built-in functions/methods used effectively?
-- Is string concatenation done efficiently?
-- Are collections module data structures used appropriately?
-- Is logging used instead of print()?
+{language_specific_guidelines}
 
 ### Critical Issues to Flag
 - Mutating objects while iterating
@@ -238,12 +407,19 @@ Please focus on the following aspects in your review:
 - Ignoring exceptions silently
 
 ## Review Format
-Please provide your review in the following format:
+IMPORTANT: Your review MUST follow this exact format:
 
 1. **Summary**: A brief overview of the code quality and main issues
-2. **Specific Issues**: List specific issues with line numbers and explanations
-3. **Suggestions**: Concrete suggestions for improvement with code examples where helpful
-4. **Positive Aspects**: Highlight good practices in the code
+
+2. **Line-by-Line Issues**: For EACH issue you find, include:
+   - The exact line number
+   - A description of the issue
+   - A code example showing how to fix it
+   - Format each issue as: "Line X: [Issue description] - [Suggested fix]"
+
+3. **Positive Aspects**: Highlight good practices in the code with specific line references
+
+Your review must be extremely specific with exact line numbers for each issue. Do not use vague references like "in this function" or "this section". Always specify the exact line number for each issue or positive aspect you mention.
 
 Focus on being constructive and educational in your feedback. Prioritize the most important issues rather than listing every minor detail.
 """

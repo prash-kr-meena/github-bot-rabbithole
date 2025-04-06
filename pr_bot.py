@@ -255,41 +255,42 @@ def webhook():
                     
                     print(f"Posting review for file: {file_path}")
                     
-                    # For each changed section, post a review comment
-                    if file_info['changed_sections']:
-                        for section in file_info['changed_sections']:
-                            # Get the line number for the comment
-                            line_number = section['start_line']
-                            
-                            # Create a review comment
-                            comment = f"# AI Code Review for `{file_path}`\n\n{review_content}"
-                            
-                            # Post the review comment
-                            success = post_pr_review_comment(
-                                repo_full_name,
-                                pr_number,
-                                head_sha,
-                                file_path,
-                                line_number,
-                                comment
-                            )
-                            
-                            if success:
-                                success_count += 1
-                            else:
-                                failure_count += 1
-                                
-                            # Add a small delay to avoid rate limiting
-                            time.sleep(1)
-                    else:
-                        # If no changed sections were identified, post a general comment for the file
-                        comment = f"# AI Code Review for `{file_path}`\n\n{review_content}"
-                        success = post_pr_comment(repo_full_name, pr_number, comment)
+                    # Post the AI-generated review as a comment on the PR
+                    comment = f"# AI Code Review for `{file_path}`\n\n{review_content}"
+                    
+                    # First, try to post the review on the first line of the first changed section
+                    if file_info['changed_sections'] and len(file_info['changed_sections']) > 0:
+                        first_section = file_info['changed_sections'][0]
+                        line_number = first_section['start_line']
+                        
+                        success = post_pr_review_comment(
+                            repo_full_name,
+                            pr_number,
+                            head_sha,
+                            file_path,
+                            line_number,
+                            comment
+                        )
                         
                         if success:
                             success_count += 1
                         else:
+                            # If posting as a review comment fails, post as a general comment
+                            general_success = post_pr_comment(repo_full_name, pr_number, comment)
+                            if general_success:
+                                success_count += 1
+                            else:
+                                failure_count += 1
+                    else:
+                        # If no changed sections were identified, post as a general comment
+                        general_success = post_pr_comment(repo_full_name, pr_number, comment)
+                        if general_success:
+                            success_count += 1
+                        else:
                             failure_count += 1
+                    
+                    # Add a small delay to avoid rate limiting
+                    time.sleep(1)
                 
                 # Post a summary comment
                 summary = (
